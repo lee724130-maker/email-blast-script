@@ -171,7 +171,7 @@ def build_message(cfg, row, subject, html_body):
     text_body = html_to_text(html_body)
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
-    return msg, subject
+    return msg
 
 
 def connect_smtp(cfg):
