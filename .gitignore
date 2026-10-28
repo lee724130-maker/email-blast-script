@@ -1,5 +1,22 @@
+# 真实凭据 / 个人数据（绝不提交）
 config.json
+accounts.json
+recipients.csv
 发送记录.csv
+
+# 打包产物 / 构建缓存
+*.exe
+build/
+dist/
+*.spec
+
+# 运行临时文件
+_预览.html
+template.html.bak
+selftest_result.txt
+testsend_result.txt
+
+# Python 缓存
 __pycache__/
 *.pyc
 .DS_Store
