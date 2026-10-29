@@ -162,8 +162,75 @@ def _clean(v):
     return str(v).strip()
 
 
+_KV_LINE = re.compile(r"^\s*([^\s：:]{1,15})\s*[：:]\s*(.+?)\s*$")
+_KNOWN_KEYS = {
+    "邮箱", "邮件", "email", "mail", "e-mail", "姓名", "名字", "name",
+    "称呼", "称谓", "性别", "订单", "订单号", "单号", "优惠", "优惠码",
+    "兑换码", "券", "专属优惠码", "手机", "电话", "地址", "公司", "备注",
+}
+_KEY_ALIAS = {
+    "邮件": "邮箱", "mail": "邮箱", "email": "邮箱", "e-mail": "邮箱",
+    "名字": "姓名", "name": "姓名",
+    "性别": "称呼", "称谓": "称呼",
+    "订单": "订单号", "单号": "订单号",
+    "优惠": "专属优惠码", "优惠码": "专属优惠码", "兑换码": "专属优惠码", "券": "专属优惠码",
+}
+
+
+def try_parse_block(text):
+    """把「标签：值 / 空行或重复键分隔多条」的块状文本转成 (headers, records)。
+    识别不到就返回 None。"""
+    if not text:
+        return None
+    lines_all = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines_all) < 2:
+        return None
+    hits = [_KV_LINE.match(ln) for ln in lines_all]
+    kv_lines = [(m.group(1).strip(), m.group(2).strip()) for m in hits if m]
+    if len(kv_lines) < 2 or len(kv_lines) / len(lines_all) < 0.6:
+        return None
+    seen_keys = {k.lower() for k, _ in kv_lines}
+    if not (seen_keys & _KNOWN_KEYS or {k for k, _ in kv_lines} & _KNOWN_KEYS):
+        return None
+    records, cur, keys_in_cur = [], {}, set()
+    for k, v in kv_lines:
+        if k in keys_in_cur:                    # 同键再出现 = 下一条
+            records.append(cur); cur = {}; keys_in_cur = set()
+        cur[k] = v; keys_in_cur.add(k)
+    if cur:
+        records.append(cur)
+    if len(records) < 2:
+        blocks = re.split(r"\n[ \t]*\n", text.strip())
+        if len(blocks) > 1:
+            records = []
+            for blk in blocks:
+                d = {}
+                for ln in blk.splitlines():
+                    m = _KV_LINE.match(ln.strip())
+                    if m:
+                        d[m.group(1).strip()] = m.group(2).strip()
+                if d:
+                    records.append(d)
+    if not records:
+        return None
+    norm = []
+    headers = []
+    for r in records:
+        m = {}
+        for k, v in r.items():
+            kk = _KEY_ALIAS.get(k.lower()) or _KEY_ALIAS.get(k) or k
+            m[kk] = v
+            if kk not in headers:
+                headers.append(kk)
+        norm.append(m)
+    return headers, norm
+
+
 def parse_csv(path):
     text = mailer.read_text(path)
+    block = try_parse_block(text)
+    if block:
+        return block
     reader = csv.reader(io.StringIO(text))
     rows = [r for r in reader if any(_clean(c) for c in r)]
     if not rows:
@@ -203,7 +270,10 @@ def parse_xlsx(path, header_row=True):
 
 
 def parse_pasted(text):
-    """粘贴内容：像表格(含制表符/多列逗号)按表解析，否则当作邮箱清单用正则抓邮箱。"""
+    """粘贴内容：块状「标签：值」优先识别；否则像表格(制表符)按 TSV；否则当作邮箱清单抓邮箱。"""
+    block = try_parse_block(text)
+    if block:
+        return block
     lines = [ln for ln in text.splitlines() if ln.strip()]
     tabbed = sum(1 for ln in lines if "\t" in ln)
     if lines and tabbed >= max(1, len(lines) // 2):  # 多数行带制表符 → TSV 表格

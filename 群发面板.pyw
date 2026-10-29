@@ -1196,6 +1196,11 @@ class TableEditorDialog(tk.Toplevel):
         if not lines:
             messagebox.showinfo("提示", "先粘贴内容再点解析", parent=self)
             return None
+        blk = pc.try_parse_block(raw)
+        if blk:
+            bh, brecs = blk
+            bbody = [[str(r.get(h, "")) for h in bh] for r in brecs]
+            return bh, bbody
         if any("\t" in ln for ln in lines):
             delim = "\t"
         elif sum(";" in ln for ln in lines) >= len(lines) * 0.5:
